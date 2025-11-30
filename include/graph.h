@@ -1,0 +1,77 @@
+#pragma once
+
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <stdexcept>
+#include <vector>
+
+namespace graphs {
+
+using NodeIdx = size_t;
+
+class Graph {
+public:
+    Graph(std::filesystem::path path, std::filesystem::path dump_dir);
+
+    void dump(std::filesystem::path path);
+
+    size_t find_and_break_loops() {
+        size_t loop_count = start_->count_and_break_loops_traversal(traversal_counter_);
+
+        traversal_counter_ += VISITED;
+        return loop_count;
+    }
+
+    struct read_error: public std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
+    struct loops_detected: public std::runtime_error {
+        using std::runtime_error::runtime_error;
+    };
+
+private:
+    enum StartEndIdx {
+        START =  0ul,
+        END   = ~0ul,
+    };
+
+    enum TraversalStatus {
+        UNVISITED = 0,
+        VISITING  = 1,
+        VISITED   = 2,
+        INCORRECT = 3,
+    };
+
+    class Node {
+    public:
+        Node(NodeIdx index) : index_(index) {}
+
+        void add_ancestor(std::shared_ptr<Node> ancestor) {
+            ancestors_.push_back(ancestor);
+        }
+
+        size_t count_and_break_loops_traversal(size_t traversal_counter);
+
+        void dump_subtree(std::ofstream& file, size_t traversal_counter);
+    private:
+        std::vector<std::shared_ptr<Node>> ancestors_;
+
+        NodeIdx index_;
+        size_t traversal_counter_ = UNVISITED;
+
+        TraversalStatus traversal_status_(size_t traversal_counter);
+    };
+
+    std::shared_ptr<Node> start_ = std::make_shared<Node>(START);
+    std::shared_ptr<Node> end_   = std::make_shared<Node>(END);
+
+    size_t traversal_counter_ = 0;
+
+    std::filesystem::path dump_dir_;
+};
+
+} //< namespace graphs
+
