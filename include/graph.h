@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -11,9 +12,9 @@ namespace graphs {
 
 using NodeIdx = size_t;
 
-class Graph {
+class DAGraph {
 public:
-    Graph(std::filesystem::path path, std::filesystem::path dump_dir);
+    DAGraph(std::stringstream& text_stream, std::filesystem::path dump_dir);
 
     void dump(std::filesystem::path path);
 
@@ -24,7 +25,9 @@ public:
         return loop_count;
     }
 
-    struct read_error: public std::runtime_error {
+    void topological_sort();
+
+    struct creation_error: public std::runtime_error {
         using std::runtime_error::runtime_error;
     };
 
@@ -53,7 +56,15 @@ private:
             ancestors_.push_back(ancestor);
         }
 
+        void set_index(NodeIdx index) {
+            index_ = index;
+        }
+
         size_t count_and_break_loops_traversal(size_t traversal_counter);
+
+        void topological_sort_traversal(std::vector<std::weak_ptr<Node>>* stack, size_t traversal_counter);
+
+        bool topological_sort_check_traversal(size_t traversal_counter);
 
         void dump_subtree(std::ofstream& file, size_t traversal_counter);
     private:
@@ -68,7 +79,7 @@ private:
     std::shared_ptr<Node> start_ = std::make_shared<Node>(START);
     std::shared_ptr<Node> end_   = std::make_shared<Node>(END);
 
-    size_t traversal_counter_ = 0;
+    size_t traversal_counter_ = UNVISITED;
 
     std::filesystem::path dump_dir_;
 };

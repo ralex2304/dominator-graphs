@@ -2,17 +2,21 @@
 
 #include <cxxopts.hpp>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 using namespace graphs;
 
 int main(int argc, const char* argv[]) {
-    cxxopts::Options options("graphs", "Graph topological sorting and dominator tree building");
+    cxxopts::Options options("graphs",
+        "Directed Acyclic Graph topological sorting and dominator tree building");
 
     options.add_options()
         ("i,input", "Input file with graph description", cxxopts::value<std::filesystem::path>())
-        ("d,dump_dir", "Dump directory", cxxopts::value<std::filesystem::path>()->default_value("dumps/"))
+        ("d,dump_dir", "Dump directory", cxxopts::value<std::filesystem::path>()->
+                                                  default_value("dumps/"))
         ("h,help", "Print help")
     ;
 
@@ -28,16 +32,30 @@ int main(int argc, const char* argv[]) {
     }
 
     try {
-        Graph graph(opt_result["input"].as<std::filesystem::path>(),
-                    opt_result["dump_dir"].as<std::filesystem::path>());
+        std::ifstream file;
+        file.exceptions(std::ifstream::badbit);
+        file.open(opt_result["input"].as<std::filesystem::path>());
 
-    } catch (Graph::read_error& e) {
-        std::cerr << "Graph read or creation error: " << e.what() << std::endl;
+        std::stringstream file_contents;
+        file_contents << file.rdbuf();
+        file.close();
+
+        DAGraph graph(file_contents, opt_result["dump_dir"].as<std::filesystem::path>());
+
+        graph.topological_sort();
+        graph.dump("topo_sort");
+
+    } catch (const std::ifstream::failure &e) {
+        std::cerr << "DAGraph read error: " << e.what() << std::endl;
         return -1;
-    }  catch (Graph::loops_detected& e) {
-        std::cerr << "Detected " << e.what() << " loop(s) in graph" << std::endl;
+    } catch (DAGraph::creation_error& e) {
+        std::cerr << "DAGraph creation error: " << e.what() << std::endl;
         return -2;
+    }  catch (DAGraph::loops_detected& e) {
+        std::cerr << "Detected " << e.what() << " loop(s) in graph" << std::endl;
+        return -3;
     }
 
     return 0;
 }
+

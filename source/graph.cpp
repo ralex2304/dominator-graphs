@@ -8,15 +8,17 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 using namespace graphs;
 using namespace std::literals;
 
-Graph::Graph(std::filesystem::path path, std::filesystem::path dump_dir) {
-    std::filesystem::create_directory(dump_dir_ = dump_dir);
+DAGraph::DAGraph(std::stringstream& text_stream, std::filesystem::path dump_dir = std::filesystem::path())
+    : dump_dir_(dump_dir) {
+
+    if (!dump_dir_.empty())
+        std::filesystem::create_directory(dump_dir_);
 
     struct NodeInfo {
         std::shared_ptr<Node> node;
@@ -26,35 +28,24 @@ Graph::Graph(std::filesystem::path path, std::filesystem::path dump_dir) {
 
     std::unordered_map<NodeIdx, NodeInfo> nodes;
 
-    try {
-        std::ifstream file;
-        file.exceptions(std::ifstream::badbit);
+    for (std::string line; std::getline(text_stream, line);) {
+        std::istringstream line_stream(line);
 
-        file.open(path);
+        NodeIdx parent_index = 0;
+        line_stream >> parent_index;
+        auto [node, is_inserted] = nodes.try_emplace(parent_index, std::make_shared<Node>(parent_index), true, true);
+        if (!is_inserted && !node->second.is_end)
+            throw creation_error(std::format("Trying to add existing node {}", parent_index));
 
-        for (std::string line; std::getline(file, line);) {
-            std::istringstream line_stream(line);
+        NodeIdx ancestor_index = 0;
+        while (line_stream >> ancestor_index) {
 
-            NodeIdx parent_index = 0;
-            line_stream >> parent_index;
-            auto [node, is_inserted] = nodes.try_emplace(parent_index, std::make_shared<Node>(parent_index), true, false);
-            if (!is_inserted && !node->second.is_end)
-                throw read_error(std::format("Trying to add existing node {}", parent_index));
+            auto [ancestor, is_inserted] = nodes.try_emplace(ancestor_index, std::make_shared<Node>(ancestor_index), false, true);
+
+            node->second.node->add_ancestor(ancestor->second.node);
 
             node->second.is_end = false;
-
-            NodeIdx ancestor_index = 0;
-            while (line_stream >> ancestor_index) {
-
-                auto [ancestor, is_inserted] = nodes.try_emplace(ancestor_index, std::make_shared<Node>(ancestor_index), false, true);
-
-                node->second.node->add_ancestor(ancestor->second.node);
-            }
         }
-
-        file.close();
-    } catch (const std::ifstream::failure &e) {
-        throw read_error("File read error: "s + e.what());
     }
 
     for (auto node: nodes) {
@@ -65,14 +56,19 @@ Graph::Graph(std::filesystem::path path, std::filesystem::path dump_dir) {
             node.second.node->add_ancestor(end_);
     }
 
-    dump(dump_dir_ / "input");
+    dump("input");
 
     size_t loop_count = 0;
     if ((loop_count = find_and_break_loops()) != 0)
         throw loops_detected(std::to_string(loop_count));
 }
 
-void Graph::dump(std::filesystem::path path) {
+void DAGraph::dump(std::filesystem::path path) {
+    if (dump_dir_.empty())
+        return;
+
+    path = dump_dir_ / path;
+
     std::ofstream file;
     file.exceptions(std::ifstream::failbit | std::ifstream::badbit);
     file.open(path.replace_extension("dot"));
@@ -96,7 +92,18 @@ void Graph::dump(std::filesystem::path path) {
                  image_path.generic_string()).c_str());
 }
 
-void Graph::Node::dump_subtree(std::ofstream& file, size_t traversal_counter) {
+void DAGraph::topological_sort() {
+    std::vector<std::weak_ptr<Node>> stack;
+    start_->topological_sort_traversal(&stack, traversal_counter_);
+    traversal_counter_ += VISITED;
+
+    for (size_t i = 1; i <= stack.size(); i++) {
+        std::shared_ptr<Node> node = stack[stack.size() - i].lock();
+        node->set_index(i);
+    }
+}
+
+void DAGraph::Node::dump_subtree(std::ofstream& file, size_t traversal_counter) {
     if (traversal_status_(traversal_counter) != UNVISITED) {
         assert(traversal_status_(traversal_counter) == VISITED);
         return;
@@ -123,14 +130,14 @@ void Graph::Node::dump_subtree(std::ofstream& file, size_t traversal_counter) {
     file << "\n";
 };
 
-Graph::TraversalStatus Graph::Node::traversal_status_(size_t traversal_counter) {
+DAGraph::TraversalStatus DAGraph::Node::traversal_status_(size_t traversal_counter) {
     assert(traversal_counter_ >= traversal_counter);
     assert(traversal_counter_ - traversal_counter < INCORRECT);
 
     return static_cast<TraversalStatus>(traversal_counter_ - traversal_counter);
 }
 
-size_t Graph::Node::count_and_break_loops_traversal(size_t traversal_counter) {
+size_t DAGraph::Node::count_and_break_loops_traversal(size_t traversal_counter) {
     assert(traversal_status_(traversal_counter) == UNVISITED);
 
     traversal_counter_ = traversal_counter + VISITING;
@@ -153,7 +160,7 @@ size_t Graph::Node::count_and_break_loops_traversal(size_t traversal_counter) {
 
             case INCORRECT:
             default:
-                assert(0 && "Tree is corrupted");
+                assert(0 && "DAGraph is corrupted");
                 loop_count += true;
                 break;
         }
@@ -161,6 +168,61 @@ size_t Graph::Node::count_and_break_loops_traversal(size_t traversal_counter) {
 
     traversal_counter_ = traversal_counter + VISITED;
     return loop_count;
+}
+
+void DAGraph::Node::topological_sort_traversal(std::vector<std::weak_ptr<Node>>* stack, size_t traversal_counter) {
+    assert(stack);
+
+    switch (traversal_status_(traversal_counter)) {
+        case UNVISITED:
+            traversal_counter_ = traversal_counter + VISITED;
+
+            for (auto ancestor: ancestors_) {
+                ancestor->topological_sort_traversal(stack, traversal_counter);
+
+                if (ancestor->index_ != END)
+                    stack->push_back(ancestor);
+            }
+
+            return;
+
+        case VISITED:
+            return;
+
+        case VISITING:
+        case INCORRECT:
+        default:
+            assert(0 && "DAGraph is corrupted");
+            return;
+    }
+}
+
+bool DAGraph::Node::topological_sort_check_traversal(size_t traversal_counter) {
+    assert(traversal_status_(traversal_counter) == UNVISITED);
+
+    bool sorted = true;
+    for (auto ancestor: ancestors_) {
+        switch (ancestor->traversal_status_(traversal_counter)) {
+            case UNVISITED:
+                traversal_counter_ = traversal_counter + VISITED;
+
+                sorted |= ancestor->topological_sort_check_traversal(traversal_counter);
+
+            [[fallthrough]];
+            case VISITED:
+                sorted |= ancestor->index_ < index_;
+                break;
+
+            case VISITING:
+            case INCORRECT:
+            default:
+                assert(0 && "DAGraph is corrupted");
+                sorted = false;
+                break;
+        }
+    }
+
+    return sorted;
 }
 
 
