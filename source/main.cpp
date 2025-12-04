@@ -31,6 +31,9 @@ int main(int argc, const char* argv[]) {
         return 0;
     }
 
+    const auto& dump_dir = opt_result["dump_dir"].as<std::filesystem::path>();
+    std::filesystem::create_directory(dump_dir);
+
     try {
         std::ifstream file;
         file.exceptions(std::ifstream::badbit);
@@ -40,10 +43,10 @@ int main(int argc, const char* argv[]) {
         file_contents << file.rdbuf();
         file.close();
 
-        DAGraph graph(file_contents, opt_result["dump_dir"].as<std::filesystem::path>());
+        DAGraph graph(file_contents, dump_dir / "input");
 
         graph.topological_sort();
-        graph.dump("topo_sort");
+        graph.dump(dump_dir / "topo_sort");
 
     } catch (const std::ifstream::failure &e) {
         std::cerr << "DAGraph read error: " << e.what() << std::endl;

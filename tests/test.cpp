@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <format>
 #include <numeric>
 #include <random>
 #include <sstream>
@@ -14,13 +15,13 @@ namespace {
 
 using namespace graphs;
 
-std::stringstream build_random_dag_description(size_t n, bool randomize_indexes, bool add_loop);
+std::stringstream build_random_dag_description(size_t n, bool add_loop);
 
 std::filesystem::path get_test_dump_dir(const testing::TestInfo* const test_info);
 
 std::stringstream read_from_file(std::filesystem::path path);
 
-#define DUMP_DIR() (get_test_dump_dir(testing::UnitTest::GetInstance()->current_test_info()))
+#define DUMP_DIR (get_test_dump_dir(testing::UnitTest::GetInstance()->current_test_info()))
 
 std::stringstream build_random_dag_description(size_t n, bool add_loop = false) {
     std::vector<size_t> node_indexes(n);
@@ -74,15 +75,11 @@ std::filesystem::path get_test_dump_dir(const testing::TestInfo* const test_info
 
     path dump_dir(TESTS_SRC_DIR);
 
-    dump_dir /= path("dumps");
+    dump_dir /= path("dumps") / path(test_info->test_suite_name()) / path(test_info->name());
 
-    std::filesystem::create_directory(dump_dir);
+    std::filesystem::create_directories(dump_dir);
 
-    dump_dir /= path(test_info->test_suite_name());
-
-    std::filesystem::create_directory(dump_dir);
-
-    return dump_dir / path(test_info->name());
+    return dump_dir;
 }
 
 std::stringstream read_from_file(std::filesystem::path path) {
@@ -103,27 +100,39 @@ std::stringstream read_from_file(std::filesystem::path path) {
 TEST(ExamplesTest, BasicExample) {
     EXPECT_NO_THROW({
         std::stringstream file = read_from_file("example.txt");
-        DAGraph graph(file, DUMP_DIR());
+        DAGraph graph(file);
     });
 }
 
 TEST(ExamplesTest, ExampleLoop) {
     EXPECT_THROW({
         std::stringstream file = read_from_file("example_loop.txt");
-        DAGraph graph(file, DUMP_DIR());
+        DAGraph graph(file);
     }, DAGraph::loops_detected);
 }
 
 TEST(ExamplesTest, ExampleSelfLoop) {
     EXPECT_THROW({
         std::stringstream file = read_from_file("example_self_loop.txt");
-        DAGraph graph(file, DUMP_DIR());
+        DAGraph graph(file);
     }, DAGraph::loops_detected);
 }
 
 class GraphGenTest: public testing::Test {
 public:
     explicit GraphGenTest(size_t size) : size_(size) {}
+
+    void TearDown() override {
+        if (!HasFailure())
+            return;
+
+        namespace fs = std::filesystem;
+
+        for (const auto& entry: fs::directory_iterator(DUMP_DIR)) {
+            if (fs::is_regular_file(entry.status()) && entry.path().extension() == ".dot")
+                DAGraph::generate_dot_image(entry.path());
+        }
+    }
 
 protected:
     size_t size_;
@@ -138,7 +147,7 @@ private:
         std::stringstream input = build_random_dag_description(size_);
 
         EXPECT_NO_THROW({
-            DAGraph graph(input, DUMP_DIR());
+            DAGraph graph(input, DUMP_DIR / "input", false);
         });
     }
 };
@@ -152,7 +161,7 @@ private:
         std::stringstream input = build_random_dag_description(size_, true);
 
         EXPECT_THROW({
-            DAGraph graph(input, DUMP_DIR());
+            DAGraph graph(input, DUMP_DIR / "input", false);
         }, DAGraph::loops_detected);
     }
 };
@@ -165,47 +174,37 @@ private:
     void TestBody() override {
         std::stringstream input = build_random_dag_description(size_);
 
-        DAGraph graph(input, DUMP_DIR());
+        DAGraph graph(input, DUMP_DIR / "input", false);
 
         graph.topological_sort();
 
-        graph.dump("topo_sort");
+        graph.dump(DUMP_DIR / "topo_sort");
 
-        EXPECT_EQ(graph.find_and_break_loops(), 0);
+        EXPECT_EQ(graph.topological_sort_check(), true);
     }
 };
+
+template <class T>
+void define_range_test(const char* name, size_t min_size, size_t max_size) {
+    for (size_t size = min_size; size <= max_size; size++) {
+        testing::RegisterTest(
+            name, std::format("size_{}", size).c_str(), nullptr,
+            std::to_string(size).c_str(),
+            __FILE__, __LINE__,
+            [=]() -> GraphGenTest* { return new T(size); }
+        );
+    }
+}
 
 } // namespace
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
 
-    for (size_t i = 0; i < 50; i++) {
-        testing::RegisterTest(
-            "InputNoLoopTest", ("size_" + std::to_string(i)).c_str(), nullptr,
-            std::to_string(i).c_str(),
-            __FILE__, __LINE__,
-            [=]() -> testing::Test* { return new InputNoLoopTest(i); }
-        );
-    }
+    define_range_test<InputNoLoopTest>    ("InputNoLoopTest",     0, 100);
+    define_range_test<InputLoopTest>      ("InputLoopTest",       1, 100);
+    define_range_test<TopologicalSortTest>("TopologicalSortTest", 0, 100);
 
-    for (size_t i = 1; i < 50; i++) {
-        testing::RegisterTest(
-            "InputLoopTest", ("size_" + std::to_string(i)).c_str(), nullptr,
-            std::to_string(i).c_str(),
-            __FILE__, __LINE__,
-            [=]() -> testing::Test* { return new InputLoopTest(i); }
-        );
-    }
-
-    for (size_t i = 1; i < 50; i++) {
-        testing::RegisterTest(
-            "TopologicalSortTest", ("size_" + std::to_string(i)).c_str(), nullptr,
-            std::to_string(i).c_str(),
-            __FILE__, __LINE__,
-            [=]() -> testing::Test* { return new TopologicalSortTest(i); }
-        );
-    }
     return RUN_ALL_TESTS();
 }
 

@@ -14,9 +14,13 @@ using NodeIdx = size_t;
 
 class DAGraph {
 public:
-    DAGraph(std::stringstream& text_stream, std::filesystem::path dump_dir);
+    DAGraph(std::stringstream& text_stream,
+            std::filesystem::path input_dump = std::filesystem::path(),
+            bool generate_dot_images = true);
 
     void dump(std::filesystem::path path);
+
+    static void generate_dot_image(std::filesystem::path dot_path);
 
     size_t find_and_break_loops() {
         size_t loop_count = start_->count_and_break_loops_traversal(traversal_counter_);
@@ -26,6 +30,8 @@ public:
     }
 
     void topological_sort();
+
+    bool topological_sort_check();
 
     struct creation_error: public std::runtime_error {
         using std::runtime_error::runtime_error;
@@ -52,8 +58,8 @@ private:
     public:
         Node(NodeIdx index) : index_(index) {}
 
-        void add_ancestor(std::shared_ptr<Node> ancestor) {
-            ancestors_.push_back(ancestor);
+        void add_child(std::shared_ptr<Node> node) {
+            children_.push_back(node);
         }
 
         void set_index(NodeIdx index) {
@@ -68,7 +74,7 @@ private:
 
         void dump_subtree(std::ofstream& file, size_t traversal_counter);
     private:
-        std::vector<std::shared_ptr<Node>> ancestors_;
+        std::vector<std::shared_ptr<Node>> children_;
 
         NodeIdx index_;
         size_t traversal_counter_ = UNVISITED;
@@ -79,9 +85,9 @@ private:
     std::shared_ptr<Node> start_ = std::make_shared<Node>(START);
     std::shared_ptr<Node> end_   = std::make_shared<Node>(END);
 
-    size_t traversal_counter_ = UNVISITED;
+    const bool generate_dot_images_;
 
-    std::filesystem::path dump_dir_;
+    size_t traversal_counter_ = UNVISITED;
 };
 
 } //< namespace graphs
