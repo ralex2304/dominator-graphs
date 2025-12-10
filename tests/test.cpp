@@ -1,4 +1,4 @@
-#include "graph.h"
+#include "dagraph.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -101,6 +101,8 @@ TEST(ExamplesTest, BasicExample) {
     EXPECT_NO_THROW({
         std::stringstream file = read_from_file("example.txt");
         DAGraph graph(file);
+
+        graph.topological_sort();
     });
 }
 
@@ -116,6 +118,18 @@ TEST(ExamplesTest, ExampleSelfLoop) {
         std::stringstream file = read_from_file("example_self_loop.txt");
         DAGraph graph(file);
     }, DAGraph::loops_detected);
+}
+
+TEST(ExamplesTest, ExampleDominators) {
+    EXPECT_NO_THROW({
+        std::stringstream file = read_from_file("example.txt");
+        DAGraph graph(file);
+
+        graph.topological_sort();
+
+        graph.build_dominator_tree();
+        graph.build_postdominator_tree();
+    });
 }
 
 class GraphGenTest: public testing::Test {

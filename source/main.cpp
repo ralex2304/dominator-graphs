@@ -1,4 +1,5 @@
-#include "graph.h"
+#include "dagraph.h"
+#include "dom_tree.h"
 
 #include <cxxopts.hpp>
 #include <filesystem>
@@ -36,7 +37,7 @@ int main(int argc, const char* argv[]) {
 
     try {
         std::ifstream file;
-        file.exceptions(std::ifstream::badbit);
+        file.exceptions(std::ifstream::badbit | std::ifstream::failbit);
         file.open(opt_result["input"].as<std::filesystem::path>());
 
         std::stringstream file_contents;
@@ -47,6 +48,12 @@ int main(int argc, const char* argv[]) {
 
         graph.topological_sort();
         graph.dump(dump_dir / "topo_sort");
+
+        DomTree dominator_tree = graph.build_dominator_tree();
+        dominator_tree.dump(dump_dir / "dom_tree");
+
+        DomTree postdominator_tree = graph.build_postdominator_tree();
+        postdominator_tree.dump(dump_dir / "postdom_tree");
 
     } catch (const std::ifstream::failure &e) {
         std::cerr << "DAGraph read error: " << e.what() << std::endl;

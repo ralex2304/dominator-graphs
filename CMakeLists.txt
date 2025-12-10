@@ -9,7 +9,8 @@ include(cmake/defaults.cmake)
 include(cmake/third_party.cmake)
 
 add_library(${PROJECT_NAME}_lib
-    ${CMAKE_CURRENT_SOURCE_DIR}/source/graph.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dagraph.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/source/dump.cpp
 )
 
 target_include_directories(${PROJECT_NAME}_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
